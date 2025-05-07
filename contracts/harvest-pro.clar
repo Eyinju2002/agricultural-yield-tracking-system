@@ -126,10 +126,7 @@
 
 ;; Checks if a field has been planted
 (define-private (is-field-planted (field-id uint))
-  (fold and 
-    (map-get? plantings { planting-id: field-id })
-    false
-  )
+  (is-some (map-get? plantings { planting-id: field-id }))
 )
 
 ;; Checks if a principal is a registered verifier
@@ -409,56 +406,60 @@
     (accessor principal) 
     (access-level (string-ascii 20)))
   (let ((granter tx-sender))
-    (cond
-      ;; For field data access, check if granter owns the field
-      ((is-eq data-type "field")
-        (if (is-field-owner data-id granter)
-          (begin
-            (map-set data-access-control
-              { data-type: data-type, data-id: data-id, accessor: accessor }
-              { granted-by: granter, granted-at: block-height, access-level: access-level }
-            )
-            (ok true)
+    ;; Check for field data type
+    (if (is-eq data-type "field")
+      (if (is-field-owner data-id granter)
+        (begin
+          (map-set data-access-control
+            { data-type: data-type, data-id: data-id, accessor: accessor }
+            { granted-by: granter, granted-at: block-height, access-level: access-level }
           )
-          ERR-NOT-AUTHORIZED
+          (ok true)
         )
+        ERR-NOT-AUTHORIZED
       )
-      ;; For planting data access, check if granter owns the planting
-      ((is-eq data-type "planting")
-        (match (map-get? plantings { planting-id: data-id })
-          planting-data
-            (if (is-eq (get farmer planting-data) granter)
-              (begin
-                (map-set data-access-control
-                  { data-type: data-type, data-id: data-id, accessor: accessor }
-                  { granted-by: granter, granted-at: block-height, access-level: access-level }
+      ;; Check for planting data type
+      (if (is-eq data-type "planting")
+        (let ((planting-data (map-get? plantings { planting-id: data-id })))
+          (if (is-some planting-data)
+            (let ((pd (unwrap-panic planting-data)))
+              (if (is-eq (get farmer pd) granter)
+                (begin
+                  (map-set data-access-control
+                    { data-type: data-type, data-id: data-id, accessor: accessor }
+                    { granted-by: granter, granted-at: block-height, access-level: access-level }
+                  )
+                  (ok true)
                 )
-                (ok true)
+                ERR-NOT-AUTHORIZED
               )
-              ERR-NOT-AUTHORIZED
             )
-          ERR-NOT-FOUND
+            ERR-NOT-FOUND
+          )
         )
-      )
-      ;; For harvest data access, check if granter owns the harvest
-      ((is-eq data-type "harvest")
-        (match (map-get? harvests { harvest-id: data-id })
-          harvest-data
-            (if (is-eq (get farmer harvest-data) granter)
-              (begin
-                (map-set data-access-control
-                  { data-type: data-type, data-id: data-id, accessor: accessor }
-                  { granted-by: granter, granted-at: block-height, access-level: access-level }
+        ;; Check for harvest data type
+        (if (is-eq data-type "harvest")
+          (let ((harvest-data (map-get? harvests { harvest-id: data-id })))
+            (if (is-some harvest-data)
+              (let ((hd (unwrap-panic harvest-data)))
+                (if (is-eq (get farmer hd) granter)
+                  (begin
+                    (map-set data-access-control
+                      { data-type: data-type, data-id: data-id, accessor: accessor }
+                      { granted-by: granter, granted-at: block-height, access-level: access-level }
+                    )
+                    (ok true)
+                  )
+                  ERR-NOT-AUTHORIZED
                 )
-                (ok true)
               )
-              ERR-NOT-AUTHORIZED
+              ERR-NOT-FOUND
             )
-          ERR-NOT-FOUND
+          )
+          ;; Invalid data type
+          ERR-INVALID-INPUT
         )
       )
-      ;; Invalid data type
-      (true ERR-INVALID-INPUT)
     )
   )
 )
